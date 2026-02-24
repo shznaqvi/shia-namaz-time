@@ -1,5 +1,4 @@
-<!DOCTYPE html>
-<html>
+<!DOCTYPE html><html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,14 +9,11 @@ canvas { background: #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.1); display:block
 button { padding:10px 20px; font-size:16px; cursor:pointer; margin-top:10px; display:none; }
 </style>
 </head>
-<body>
-
-<h2>Daily Shia Namaz Timetable</h2>
+<body><h2>Daily Shia Namaz Timetable</h2>
 <p id="location">Checking location permission...</p>
+<p id="date"></p>
 <button id="enableBtn" onclick="requestLocation()">Enable GPS Location</button>
-<canvas id="namazCanvas" width="400" height="400"></canvas>
-
-<script>
+<canvas id="namazCanvas" width="400" height="400"></canvas><script>
 const fajrAngle = 17.5;
 const ishaAngle = 14;
 const maghribOffset = 12;
@@ -106,13 +102,20 @@ async function reverseGeocode(lat, lon){
     }
 }
 
+function updateDate(){
+    const now=new Date();
+    const options={ weekday:'long', year:'numeric', month:'long', day:'numeric' };
+    document.getElementById('date').innerText = now.toLocaleDateString(undefined, options);
+}
+
 function requestLocation(){
     navigator.geolocation.getCurrentPosition(async function(position){
         const lat = position.coords.latitude;
         const lon = position.coords.longitude;
 
         const city = await reverseGeocode(lat, lon);
-        document.getElementById('location').innerText = 'Location: ' + city;
+        updateDate();
+        document.getElementById('location').innerText = `Location: ${city}`;
         document.getElementById('enableBtn').style.display = 'none';
 
         const times = calculateTimes(lat, lon);
@@ -123,10 +126,10 @@ function requestLocation(){
     }, function(){
         document.getElementById('location').innerText = 'Location permission denied.';
         document.getElementById('enableBtn').style.display = 'inline-block';
+        updateDate();
     });
 }
 
-// Refresh timings at next midnight
 function scheduleNextRefresh(){
     const now = new Date();
     const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1, 0,0,0);
@@ -134,10 +137,10 @@ function scheduleNextRefresh(){
     setTimeout(requestLocation, msUntilMidnight);
 }
 
-// Automatically check permission on load
 window.onload = async function(){
     if(!navigator.geolocation){
         document.getElementById('location').innerText = 'Geolocation not supported by browser.';
+        updateDate();
         return;
     }
 
@@ -148,18 +151,17 @@ window.onload = async function(){
             requestLocation();
         }
         else if(permission.state === 'prompt'){
-            requestLocation(); // triggers browser popup
+            requestLocation();
         }
         else {
             document.getElementById('location').innerText = 'Location permission blocked. Please enable manually.';
             document.getElementById('enableBtn').style.display = 'inline-block';
+            updateDate();
         }
     } else {
         requestLocation();
     }
 };
 
-</script>
-
-</body>
+</script></body>
 </html>
