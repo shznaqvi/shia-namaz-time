@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shia Namaz Timetable Canvas</title>
+<style>
+body { font-family: Arial, sans-serif; text-align: center; background:#f4f4f4; margin:0; padding:20px; }
+canvas { background: #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.1); display:block; margin: 20px auto; }
+button { padding:10px 20px; font-size:16px; cursor:pointer; margin-top:10px; display:none; }
+</style>
+</head>
+<body>
+
+<h2>Daily Shia Namaz Timetable</h2>
+<p id="location">Checking location permission...</p>
+<button id="enableBtn" onclick="requestLocation()">Enable GPS Location</button>
+<canvas id="namazCanvas" width="400" height="400"></canvas>
+
+<script>
+const fajrAngle = 17.5;
+const ishaAngle = 14;
+const maghribOffset = 12;
+const imsakOffset = 10;
+const prayers = ['Imsak','Fajr','Sunrise','Dhuhr','Asr','Maghrib','Isha'];
+
+function deg2rad(d){ return d*Math.PI/180; }
+function rad2deg(r){ return r*180/Math.PI; }
+function getJulian(date){ return (date/86400000)+2440587.5; }
+
+function solarDeclination(jd){
+    const n = jd-2451545.0;
+    const L=(280.46+0.9856474*n)%360;
+    const g=deg2rad((357.528+0.9856003*n)%360);
+    const lambda=deg2rad(L+1.915*Math.sin(g)+0.02*Math.sin(2*g));
+    return rad2deg(Math.asin(Math.sin(deg2rad(23.44))*Math.sin(lambda)));
+}
+
+function equationOfTime(jd){
+    const n=jd-2451545.0;
+    const g=deg2rad((357.528+0.9856003*n)%360);
+    return -7.655*Math.sin(g)+9.873*Math.sin(2*g+deg2rad(3.588));
+}
+
+function hourAngle(lat, decl, angle){
+    const cosH=(Math.sin(deg2rad(-angle))-Math.sin(deg2rad(lat))*Math.sin(deg2rad(decl)))/(Math.cos(deg2rad(lat))*Math.cos(deg2rad(decl)));
+    if(cosH<-1||cosH>1)return null;
+    return rad2deg(Math.acos(cosH));
+}
+
+function formatTime(decimal){
+    decimal=(decimal+24)%24;
+    const h=Math.floor(decimal);
+    const m=Math.floor((decimal-h)*60);
+    return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+}
+
+function calculateTimes(lat, lon){
+    const now=new Date();
+    const jd=getJulian(now);
+    const decl=solarDeclination(jd);
+    const eqt=equationOfTime(jd);
+    const timezone=-now.getTimezoneOffset()/60;
+
+    const solarNoon=12+timezone-lon/15-eqt/60;
+    const sunriseHA=hourAngle(lat,decl,0.833);
+    const fajrHA=hourAngle(lat,decl,fajrAngle);
+    const ishaHA=hourAngle(lat,decl,ishaAngle);
+
+    if(!sunriseHA||!fajrHA||!ishaHA){ 
+        alert('Calculation invalid at this latitude/date.'); 
+        return; 
+    }
+
+    const sunrise=solarNoon-sunriseHA/15;
+    const sunset=solarNoon+sunriseHA/15;
+    const fajr=solarNoon-fajrHA/15;
+    const isha=solarNoon+ishaHA/15;
+    const dhuhr=solarNoon;
+    const asr=solarNoon+(sunset-solarNoon)/2;
+    const maghrib=sunset+maghribOffset/60;
+    const imsak=fajr-imsakOffset/60;
+
+    return [imsak,fajr,sunrise,dhuhr,asr,maghrib,isha].map(formatTime);
+}
+
+function drawCanvas(times){
+    const canvas=document.getElementById('namazCanvas');
+    const ctx=canvas.getContext('2d');
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle='#111';
+    ctx.font='16px Arial';
+
+    for(let i=0;i<prayers.length;i++){
+        ctx.fillText(`${prayers[i]}: ${times[i]}`,50,50+i*40);
+    }
+}
+
+async function reverseGeocode(lat, lon){
+    try{
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+        const data = await res.json();
+        return data.address.city || data.address.town || data.address.village || data.address.state || 'Unknown Location';
+    } catch {
+        return 'Location name unavailable';
+    }
+}
+
+function requestLocation(){
+    navigator.geolocation.getCurrentPosition(async function(position){
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+
+        const city = await reverseGeocode(lat, lon);
+        document.getElementById('location').innerText = 'Location: ' + city;
+        document.getElementById('enableBtn').style.display = 'none';
+
+        const times = calculateTimes(lat, lon);
+        drawCanvas(times);
+
+        scheduleNextRefresh();
+
+    }, function(){
+        document.getElementById('location').innerText = 'Location permission denied.';
+        document.getElementById('enableBtn').style.display = 'inline-block';
+    });
+}
+
+// Refresh timings at next midnight
+function scheduleNextRefresh(){
+    const now = new Date();
+    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1, 0,0,0);
+    const msUntilMidnight = nextMidnight - now;
+    setTimeout(requestLocation, msUntilMidnight);
+}
+
+// Automatically check permission on load
+window.onload = async function(){
+    if(!navigator.geolocation){
+        document.getElementById('location').innerText = 'Geolocation not supported by browser.';
+        return;
+    }
+
+    if(navigator.permissions){
+        const permission = await navigator.permissions.query({ name: 'geolocation' });
+
+        if(permission.state === 'granted'){
+            requestLocation();
+        }
+        else if(permission.state === 'prompt'){
+            requestLocation(); // triggers browser popup
+        }
+        else {
+            document.getElementById('location').innerText = 'Location permission blocked. Please enable manually.';
+            document.getElementById('enableBtn').style.display = 'inline-block';
+        }
+    } else {
+        requestLocation();
+    }
+};
+
+</script>
+
+</body>
+</html>
