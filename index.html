@@ -13,71 +13,13 @@ button { padding:10px 20px; font-size:16px; cursor:pointer; margin-top:10px; dis
 <p id="location">Checking location permission...</p>
 <p id="date"></p>
 <button id="enableBtn" onclick="requestLocation()">Enable GPS Location</button>
-<canvas id="namazCanvas" width="400" height="400"></canvas><script>
-const fajrAngle = 17.5;
-const ishaAngle = 14;
-const maghribOffset = 12;
-const imsakOffset = 10;
+<canvas id="namazCanvas" width="400" height="400"></canvas><script src="https://cdn.jsdelivr.net/npm/praytimes@2.3.0/praytimes.js"></script><script>
 const prayers = ['Imsak','Fajr','Sunrise','Dhuhr','Asr','Maghrib','Isha'];
 
-function deg2rad(d){ return d*Math.PI/180; }
-function rad2deg(r){ return r*180/Math.PI; }
-function getJulian(date){ return (date/86400000)+2440587.5; }
-
-function solarDeclination(jd){
-    const n = jd-2451545.0;
-    const L=(280.46+0.9856474*n)%360;
-    const g=deg2rad((357.528+0.9856003*n)%360);
-    const lambda=deg2rad(L+1.915*Math.sin(g)+0.02*Math.sin(2*g));
-    return rad2deg(Math.asin(Math.sin(deg2rad(23.44))*Math.sin(lambda)));
-}
-
-function equationOfTime(jd){
-    const n=jd-2451545.0;
-    const g=deg2rad((357.528+0.9856003*n)%360);
-    return -7.655*Math.sin(g)+9.873*Math.sin(2*g+deg2rad(3.588));
-}
-
-function hourAngle(lat, decl, angle){
-    const cosH=(Math.sin(deg2rad(-angle))-Math.sin(deg2rad(lat))*Math.sin(deg2rad(decl)))/(Math.cos(deg2rad(lat))*Math.cos(deg2rad(decl)));
-    if(cosH<-1||cosH>1)return null;
-    return rad2deg(Math.acos(cosH));
-}
-
-function formatTime(decimal){
-    decimal=(decimal+24)%24;
-    const h=Math.floor(decimal);
-    const m=Math.floor((decimal-h)*60);
-    return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
-}
-
-function calculateTimes(lat, lon){
+function updateDate(){
     const now=new Date();
-    const jd=getJulian(now);
-    const decl=solarDeclination(jd);
-    const eqt=equationOfTime(jd);
-    const timezone=-now.getTimezoneOffset()/60;
-
-    const solarNoon=12+timezone-lon/15-eqt/60;
-    const sunriseHA=hourAngle(lat,decl,0.833);
-    const fajrHA=hourAngle(lat,decl,fajrAngle);
-    const ishaHA=hourAngle(lat,decl,ishaAngle);
-
-    if(!sunriseHA||!fajrHA||!ishaHA){ 
-        alert('Calculation invalid at this latitude/date.'); 
-        return; 
-    }
-
-    const sunrise=solarNoon-sunriseHA/15;
-    const sunset=solarNoon+sunriseHA/15;
-    const fajr=solarNoon-fajrHA/15;
-    const isha=solarNoon+ishaHA/15;
-    const dhuhr=solarNoon;
-    const asr=solarNoon+(sunset-solarNoon)/2;
-    const maghrib=sunset+maghribOffset/60;
-    const imsak=fajr-imsakOffset/60;
-
-    return [imsak,fajr,sunrise,dhuhr,asr,maghrib,isha].map(formatTime);
+    const options={ weekday:'long', year:'numeric', month:'long', day:'numeric' };
+    document.getElementById('date').innerText = now.toLocaleDateString(undefined, options);
 }
 
 function drawCanvas(times){
@@ -88,7 +30,7 @@ function drawCanvas(times){
     ctx.font='16px Arial';
 
     for(let i=0;i<prayers.length;i++){
-        ctx.fillText(`${prayers[i]}: ${times[i]}`,50,50+i*40);
+        ctx.fillText(`${prayers[i]}: ${times[prayers[i]]}`,50,50+i*40);
     }
 }
 
@@ -96,31 +38,28 @@ async function reverseGeocode(lat, lon){
     try{
         const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
         const data = await res.json();
-        return data.address.city || data.address.town || data.address.village || data.address.state || 'Unknown Location';
+        return data.address.city || data.address.town || data.address.village || data.address.state || `(${lat.toFixed(3)}, ${lon.toFixed(3)})`;
     } catch {
-        return 'Location name unavailable';
+        return `(${lat.toFixed(3)}, ${lon.toFixed(3)})`;
     }
-}
-
-function updateDate(){
-    const now=new Date();
-    const options={ weekday:'long', year:'numeric', month:'long', day:'numeric' };
-    document.getElementById('date').innerText = now.toLocaleDateString(undefined, options);
 }
 
 function requestLocation(){
     navigator.geolocation.getCurrentPosition(async function(position){
         const lat = position.coords.latitude;
         const lon = position.coords.longitude;
+        const timezone = -new Date().getTimezoneOffset()/60;
 
         const city = await reverseGeocode(lat, lon);
         updateDate();
-        document.getElementById('location').innerText = `Location: ${city}`;
+        document.getElementById('location').innerText = 'Location: ' + city;
         document.getElementById('enableBtn').style.display = 'none';
 
-        const times = calculateTimes(lat, lon);
-        drawCanvas(times);
+        const prayTimes = new PrayTimes('Jafari');
+        prayTimes.adjust({'imsak': 10, 'fajr': 17.5, 'isha': 14});
+        const times = prayTimes.getTimes(new Date(), [lat, lon], timezone);
 
+        drawCanvas(times);
         scheduleNextRefresh();
 
     }, function(){
@@ -162,6 +101,5 @@ window.onload = async function(){
         requestLocation();
     }
 };
-
 </script></body>
 </html>
